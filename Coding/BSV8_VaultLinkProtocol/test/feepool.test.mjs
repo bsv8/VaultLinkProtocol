@@ -250,7 +250,7 @@ test("actual disk pool ledger counts deltas across channels/restart, closes at z
     await p.markSigned("close");
     const cancelled = await payment("cancelled", 151n);
     const q = await p.quote(cancelled);
-    assert.deepEqual(q.reasons, ["session-limit"]);
+    assert.deepEqual(q.reasons, []); // Historical cumulative usage does not authorize or block new signatures.
     await p.reserve(cancelled, {
       requestCommitment: cancelled.commitment,
       configRevision: q.configRevision,

@@ -55,18 +55,18 @@ async function sample() {
     };
   return { pub, prior, tx, raw: serializeTransaction(tx) };
 }
-test("P2PKH validates real previous transaction/outpoint, ownership, fee, output-only amount", async () => {
+test("P2PKH validates real previous transaction/outpoint, ownership and fee-inclusive spend", async () => {
   const s = await sample(),
     review = await inspectP2pkh(s.raw, [{ transaction: s.prior }], s.pub, 0);
   assert.equal(review.fee, 10n);
-  assert.equal(review.amount, 300n);
+  assert.equal(review.amount, 310n);
   assert.equal(review.change, 690n);
   const key = new DeviceIdentityKey(priv);
   const signed = await key.signP2pkh(
     s.raw,
     [{ transaction: s.prior }],
     0,
-    async (r) => r.amount === 300n,
+    async (r) => r.amount === 310n,
   );
   assert.equal(signed.signature.at(-1), 0x41);
   assert.ok(

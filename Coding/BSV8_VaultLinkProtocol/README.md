@@ -1,5 +1,11 @@
 # VaultLink v2 参考 SDK
 
+## 2026-10-23 已知操作策略
+
+TS `PaymentPolicy` 与 C++ `Policy` 对有限已知操作（identity、Connect identity/intent、Channel 签名、BitFS wire 非资金操作）自动注册为 automatic；旧 manual 渠道只迁移模式并递增 revision：TS 在装载时完成，C++ 由产品迁移闸门放行后、首个 signing 注册/列表/执行前完成，避免改写仍在 staged import 中的 hash-bound bank。持久化失败不签名。旧支付配置、会话、池、unknown 和签名责任不清空。身份/网络、完整文档/类型核验、revision 撤权及锁定仍由执行链检查。
+
+`software.digest-sign` 不属于自动操作；配置、配对、PIN、导出/迁移也不在此策略中。Rockey 的已知操作不调用批准或自动支付提示回调；旧端不能仅凭相同 wireVersion 被认定已实现此策略。支付金额、单笔设置和花费提示仍须按工程仓当前 V1S 单独施工/验收，此段不宣称那些规则已完成。消费物采用源码构建的 scoped overlay，保留基础 sourceCommit，并另记源文件与消费文件哈希。
+
 > 2026-10-10 最终施工记录：[三项目施工验收](../../reports/2026-10-10-三项目施工验收.md)。同 Key 双向迁移及恢复、三按钮导入 PIN、有限安全归档、普通未签名预览/显式预签已完成代码施工；旧“继续施工/不支持”条目保留为历史。实体 USB、按键和 Flash 掉电另行验收，不能用宿主测试代替。本期不做信用信息。
 
 

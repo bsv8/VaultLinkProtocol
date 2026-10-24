@@ -71,51 +71,39 @@ test("registration, ownership, config revision and first-enable confirmation", a
   await assert.rejects(p.quote({ ...pay("a", 1n), owner: "other" }), /channel/);
   await assert.rejects(p.quote(pay("a", 1n, "missing")), /channel/);
 });
-test("equal single/session thresholds auto; either excess requires single bound approval", async () => {
+test("single threshold is inclusive; historical session total does not prompt", async () => {
   const { p } = await ready();
-  await p.reserve(pay("a", 10n));
-  await p.markSigned("a");
-  await p.reserve(pay("b", 5n));
-  await p.markSigned("b");
-  const c = pay("c", 1n),
-    q = await p.quote(c);
-  assert.deepEqual(q.reasons, ["session-limit"]);
-  await assert.rejects(p.reserve(c), /confirmation/);
-  await p.reserve(c, approval(c, q));
-  await p.markSigned("c");
+  await p.reserve(pay("a", 10n)); await p.markSigned("a");
+  await p.reserve(pay("b", 5n)); await p.markSigned("b");
+  const c = pay("c", 1n);
+  assert.deepEqual((await p.quote(c)).reasons, []);
+  await p.reserve(c); await p.markSigned("c");
   assert.equal((await p.quote(pay("d", 1n))).used, 16n);
-  assert.deepEqual((await p.quote(pay("d", 11n))).reasons, [
-    "single-limit",
-    "session-limit",
-  ]);
+  const d = pay("d", 11n), quote = await p.quote(d);
+  assert.deepEqual(quote.reasons, ["single-limit"]);
+  await assert.rejects(p.reserve(d), /confirmation/);
+  await p.reserve(d, approval(d, quote)); await p.markSigned("d");
 });
-test("raise applies only current session and never clears used/default/single threshold", async () => {
+test("removed session-raise field never authorizes or clears historical usage", async () => {
   const { p } = await ready();
-  await p.reserve(pay("a", 10n));
-  await p.markSigned("a");
-  const b = pay("b", 10n),
-    q = await p.quote(b);
-  await p.reserve(b, approval(b, q, 30n));
-  await p.markSigned("b");
-  const s = await p.snapshot();
-  assert.equal(s.sessions[0].used, 20n);
-  assert.equal(s.sessions[0].limit, 30n);
-  assert.equal(s.channels[0].defaultSessionLimit, 15n);
-  assert.equal(s.channels[0].singleLimit, 10n);
-  assert.deepEqual((await p.quote(pay("c", 11n))).reasons, [
-    "single-limit",
-    "session-limit",
-  ]);
-});
-test("cross-channel atomic reservations prevent concurrent small payments evading session total", async () => {
-  const { p } = await ready();
-  await p.configure(cfg("two"), true);
-  const results = await Promise.allSettled([
-    p.reserve(pay("a", 10n)),
-    p.reserve(pay("b", 10n, "two")),
-  ]);
-  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  await p.reserve(pay("a", 10n)); await p.markSigned("a");
+  const b = pay("b", 10n), q = await p.quote(b);
+  await assert.rejects(p.reserve(b, approval(b, q, 30n)), /session-limits-removed/);
   assert.equal((await p.snapshot()).sessions[0].used, 10n);
+  await p.reserve(b); await p.markSigned("b");
+  const s = await p.snapshot();
+  assert.equal(s.sessions[0].used, 20n); assert.equal(s.sessions[0].limit, 0n);
+  assert.equal(s.channels[0].defaultSessionLimit, 15n); assert.equal(s.channels[0].singleLimit, 10n);
+  assert.deepEqual((await p.quote(pay("c", 11n))).reasons, ["single-limit"]);
+});
+test("cross-channel atomic reservations retain all usage without a cumulative cap; replay still rejected", async () => {
+  const { p } = await ready(); await p.configure(cfg("two"), true);
+  const results = await Promise.allSettled([p.reserve(pay("a", 10n)), p.reserve(pay("b", 10n, "two"))]);
+  assert.equal(results.filter(r => r.status === "fulfilled").length, 2);
+  assert.equal((await p.snapshot()).sessions[0].used, 20n);
+  const replay = await Promise.allSettled([p.reserve(pay("same", 1n)), p.reserve(pay("same", 1n))]);
+  assert.equal(replay.filter(r => r.status === "fulfilled").length, 1);
+  assert.equal((await p.snapshot()).sessions[0].used, 21n);
 });
 test("signed/unknown retain budget, known-unexecuted release leaves replay tombstone", async () => {
   const { p } = await ready();
@@ -185,8 +173,8 @@ test('owner default session limit changes atomically across App channels without
  const {p}=await ready();await p.configure(cfg('two'),true);
  await p.configure({...cfg(),defaultSessionLimit:30n,revision:2},true);
  const state=await p.snapshot();assert.equal(state.channels.find(c=>c.id==='two').defaultSessionLimit,30n);
- assert.equal(state.channels.find(c=>c.id==='two').revision,2);assert.equal(state.sessions[0].limit,15n);
- await p.startSession('next','owner',true);assert.equal((await p.snapshot()).sessions[1].limit,30n);
+ assert.equal(state.channels.find(c=>c.id==='two').revision,2);assert.equal(state.sessions[0].limit,0n);
+ await p.startSession('next','owner',true);assert.equal((await p.snapshot()).sessions[1].limit,0n);
 });
 test('version 1 policy upgrades without losing channel configuration or previously signed session usage',async()=>{
  const {p,store}=await ready();await p.reserve(pay('legacy',10n));await p.markSigned('legacy');p.lock();

@@ -67,10 +67,11 @@ int main(int argc, char **argv) {
     assert(!p.quote("channel-b", "connection", "app", 200).prompt());
     p.reserve("app-two", "channel-b", "connection", "app", 200, commitment, false);
     p.signed_payment("app-two");
-    assert(p.quote("channel-a", "connection", "app", 1).total);
-    p.reserve("app-three", "channel-a", "connection", "app", 1, commitment, true);
+    assert(!p.quote("channel-a", "connection", "app", 1).prompt());
+    p.reserve("app-three", "channel-a", "connection", "app", 1, commitment, false);
     p.signed_payment("app-three");
-    assert(p.quote("channel-b", "connection", "app", 1).total);
+    assert(!p.quote("channel-b", "connection", "app", 1).prompt());
+    assert(p.quote("channel-b", "connection", "app", 401).single);
   }
   {
     Policy restored(store, "key");
@@ -78,9 +79,9 @@ int main(int argc, char **argv) {
     assert(restored.inspect_pool_state("pool",Bytes(32,7),160).previous_paid==150);
     assert(snapshot.at("channels").array[0].at("kind").string() == "plugin");
     assert(snapshot.at("sessions").array[0].at("used").integer() == 501);
-    assert(snapshot.at("sessions").array[0].at("limit").integer() == 500);
+    assert(snapshot.at("sessions").array[0].at("limit").integer() == 0);
     assert(snapshot.at("sessions").array[0].at("active").flag());
-    assert(restored.quote("channel-a", "connection", "app", 1).total);
+    assert(!restored.quote("channel-a", "connection", "app", 1).prompt());
     restored.close_session("connection"); restored.close_session("connection");
     auto closed = restored.snapshot().at("sessions").array[0];
     assert(!closed.at("active").flag() && closed.at("used").integer() == 501);
@@ -97,7 +98,10 @@ int main(int argc, char **argv) {
     original.reserve("old-payment","a","old-session","app",10,commitment,false);original.signed_payment("old-payment");
     original.configure({"a","app",10,30,2,true},true);
     auto state=original.snapshot();assert(state.at("channels").array[1].at("defaultSessionLimit").integer()==30);
-    assert(state.at("sessions").array[0].at("limit").integer()==15);
+    assert(state.at("sessions").array[0].at("limit").integer()==0);
+    // Simulate a real historical cap; migration preserves it as history,
+    // instead of manufacturing that cap for new current-version sessions.
+    for(auto &field:state.map)if(field.first=="sessions")for(auto &entry:field.second.array[0].map)if(entry.first=="limit")entry.second=Value(uint64_t(15));
     for(auto &field:state.map)if(field.first=="version")field.second=Value(uint64_t(1));
     state.map.erase(std::remove_if(state.map.begin(),state.map.end(),[](const auto &field){return field.first=="pools";}),state.map.end());
     for(auto &field:state.map)if(field.first=="pending")for(auto &row:field.second.array)
@@ -106,6 +110,7 @@ int main(int argc, char **argv) {
   }
   Policy migrated(legacy,"legacy-key");auto state=migrated.snapshot();
   assert(state.at("version").integer()==2);assert(state.at("sessions").array[0].at("used").integer()==10);
+  assert(state.at("sessions").array[0].at("limit").integer()==15);
   assert(state.at("pending").array[0].at("state").string()=="signed");
   assert(state.at("channels").array[1].at("defaultSessionLimit").integer()==30);
 

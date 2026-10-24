@@ -67,7 +67,7 @@ async function body(key, paymentId) {
     }),
   };
 }
-test("real atomic file persistence with P2PKH output-based policy: auto then cumulative confirm", async () => {
+test("real atomic file persistence with fee-inclusive P2PKH spend and no cumulative confirmation", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "vlp-policy-"));
   const key = new DeviceIdentityKey(priv);
   try {
@@ -85,28 +85,28 @@ test("real atomic file persistence with P2PKH output-based policy: auto then cum
       { owner: "app", kind: "app", sessionId: "session" },
       async (_p, q) => {
         prompts++;
-        assert.deepEqual(q.reasons, ["session-limit"]);
-        return { allow: true, raiseSessionLimit: 1000n };
+        assert.deepEqual(q.reasons, ["single-limit"]);
+        return { allow: true };
       },
     );
     const signal = new AbortController().signal;
     for (const id of ["one", "two"]) {
       const core = await op.verify(await body(key, id));
-      assert.equal(core.amount, 300n);
+      assert.equal(core.amount, 310n);
       assert.equal(await op.authorize(core, signal), true);
       const signed = await op.execute(core, signal);
       assert.equal(signed.signatures.length, 1);
     }
-    assert.equal(prompts, 1);
+    assert.equal(prompts, 0);
     const snap = await policy.snapshot();
-    assert.equal(snap.sessions[0].used, 600n);
-    assert.equal(snap.sessions[0].limit, 1000n);
+    assert.equal(snap.sessions[0].used, 620n);
+    assert.equal(snap.sessions[0].limit, 0n);
     assert.equal(snap.channels[0].defaultSessionLimit, 500n);
     const restored = await PaymentPolicy.open(
       store,
       Buffer.from(key.publicKey()).toString("hex"),
     );
-    assert.equal((await restored.snapshot()).sessions[0].used, 600n);
+    assert.equal((await restored.snapshot()).sessions[0].used, 620n);
     assert.equal((await restored.snapshot()).sessions[0].active, true);
   } finally {
     key.close();
